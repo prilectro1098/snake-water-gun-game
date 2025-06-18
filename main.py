@@ -10,11 +10,11 @@ import plotly.express as px
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
-st.set_page_config(page_title="Multiplayer Snake Water Gun", page_icon="🎮")
+st.set_page_config(page_title="Multiplayer Stone Paper Scissor", page_icon="✂️")
 
 # ===== Constants =====
-YOU_DICT = {"Snake": 1, "Water": -1, "Gun": 0}
-REVERSE_DICT = {1: "Snake", -1: "Water", 0: "Gun"}
+YOU_DICT = {"Stone": 0, "Paper": 1, "Scissor": 2}
+REVERSE_DICT = {0: "Stone", 1: "Paper", 2: "Scissor"}
 USERS_FILE = "users.json"
 TIMER_LIMIT = 10  # seconds
 
@@ -71,7 +71,7 @@ if not st.session_state.logged_in:
     st.stop()
 
 # ===== Game UI =====
-st.title("🐍💧🔫 Snake - Water - Gun Game")
+st.title("🪨📄✂️ Stone - Paper - Scissor Game")
 mode = st.radio("Choose Mode:", ["Player vs Computer", "Player vs Player"])
 if mode == "Player vs Computer":
     difficulty = st.radio("Select Difficulty:", ["Easy", "Hard"])
@@ -123,7 +123,7 @@ if not st.session_state.game_completed:
     with col1:
         st.subheader(f"🧑 {st.session_state.username1} (Player 1)")
         if st.session_state.locked_choice1 is None:
-            choice1 = st.radio("Choose:", ["Snake", "Water", "Gun"], key="p1")
+            choice1 = st.radio("Choose:", ["Stone", "Paper", "Scissor"], key="p1")
             if st.button("🔒 Lock Choice"):
                 st.session_state.locked_choice1 = choice1
         else:
@@ -131,22 +131,22 @@ if not st.session_state.game_completed:
 
     with col2:
         if mode == "Player vs Player":
-            st.subheader(f"👳🏻‍♀ {st.session_state.username2} (Player 2)")
-            choice2 = st.radio("Choose:", ["Snake", "Water", "Gun"], key="p2")
+            st.subheader(f"👳️ {st.session_state.username2} (Player 2)")
+            choice2 = st.radio("Choose:", ["Stone", "Paper", "Scissor"], key="p2")
         else:
             st.subheader("🤖 Computer will choose automatically")
             if difficulty == "Easy":
-                choice2 = random.choice(["Snake", "Water", "Gun"])
+                choice2 = random.choice(["Stone", "Paper", "Scissor"])
             else:
                 last_choice = st.session_state.locked_choice1
-                if last_choice == "Snake":
-                    choice2 = "Gun"
-                elif last_choice == "Water":
-                    choice2 = "Snake"
-                elif last_choice == "Gun":
-                    choice2 = "Water"
+                if last_choice == "Stone":
+                    choice2 = "Paper"
+                elif last_choice == "Paper":
+                    choice2 = "Scissor"
+                elif last_choice == "Scissor":
+                    choice2 = "Stone"
                 else:
-                    choice2 = random.choice(["Snake", "Water", "Gun"])
+                    choice2 = random.choice(["Stone", "Paper", "Scissor"])
 
     if st.button("🎯 Play Round"):
         if st.session_state.locked_choice1 is None:
@@ -165,7 +165,7 @@ if not st.session_state.game_completed:
                 if you == opponent:
                     result = "Draw"
                     st.info("It's a draw!")
-                elif (you == 1 and opponent == -1) or (you == -1 and opponent == 0) or (you == 0 and opponent == 1):
+                elif (you - opponent) % 3 == 1:
                     result = st.session_state.username1
                     st.success("✅ Player 1 Wins This Round!")
                     st.session_state.score1 += 1
