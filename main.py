@@ -3,109 +3,216 @@ import random
 import time
 import os
 import json
+import hashlib
+import pandas as pd
+import plotly.express as px
 
-youDict = {"Snake": 1, "Water": -1, "Gun": 0}
-reverseDict = {1: "Snake", -1: "Water", 0: "Gun"}
-LEADERBOARD_FILE = "leaderboard.json"
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
 
 st.set_page_config(page_title="Multiplayer Snake Water Gun", page_icon="🎮")
 
-st.title("🐍💧🔫 Snake - Water - Gun Game")
+# ===== Constants =====
+YOU_DICT = {"Snake": 1, "Water": -1, "Gun": 0}
+REVERSE_DICT = {1: "Snake", -1: "Water", 0: "Gun"}
+USERS_FILE = "users.json"
+TIMER_LIMIT = 10  # seconds
 
-# Game Mode
-mode = st.radio("Choose Mode:", ["Player vs Player", "Player vs Computer"])
+# ===== Load/Create User Database =====
+if not os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "w") as f:
+        json.dump([], f)
+
+with open(USERS_FILE, "r") as f:
+    USERS = json.load(f)
+
+# ===== Login System =====
+with st.sidebar:
+    st.title("🔐 Login")
+    st.subheader("Player 1 Login")
+    username1 = st.text_input("Username (P1)")
+    password1 = st.text_input("Password (P1)", type="password")
+
+    st.subheader("Player 2 Login")
+    username2 = st.text_input("Username (P2)")
+    password2 = st.text_input("Password (P2)", type="password")
+
+    login_btn = st.button("Login Both")
+
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
+
+    if login_btn:
+        user1 = next((u for u in USERS if u["username"] == username1 and u["password"] == hash_password(password1)), None)
+        user2 = next((u for u in USERS if u["username"] == username2 and u["password"] == hash_password(password2)), None)
+        if user1 and user2:
+            st.session_state.logged_in = True
+            st.session_state.username1 = username1
+            st.session_state.username2 = username2
+            st.success(f"Welcome {username1} and {username2}!")
+        else:
+            st.error("Invalid credentials for one or both players")
+
+    with st.expander("📝 Register New Players"):
+        new_user = st.text_input("New Username")
+        new_pass = st.text_input("New Password", type="password")
+        if st.button("Register"):
+            if any(u["username"] == new_user for u in USERS):
+                st.warning("Username already exists")
+            else:
+                USERS.append({"username": new_user, "password": hash_password(new_pass)})
+                with open(USERS_FILE, "w") as f:
+                    json.dump(USERS, f, indent=4)
+                st.success("Registered successfully!")
+
+# ===== Stop if not logged in =====
+if not st.session_state.logged_in:
+    st.warning("Please log in with both players to access the game.")
+    st.stop()
+
+# ===== Game UI =====
+st.title("🐍💧🔫 Snake - Water - Gun Game")
+mode = st.radio("Choose Mode:", ["Player vs Computer", "Player vs Player"])
+if mode == "Player vs Computer":
+    difficulty = st.radio("Select Difficulty:", ["Easy", "Hard"])
+else:
+    difficulty = None
 
 if "score1" not in st.session_state:
     st.session_state.score1 = 0
     st.session_state.score2 = 0
-if "timer_expired" not in st.session_state:
-    st.session_state.timer_expired = False
+    st.session_state.history = []
+    st.session_state.round = 0
+    st.session_state.locked_choice1 = None
+    st.session_state.game_completed = False
 
-player_name = st.text_input("Enter your name:", value="Player1")
-
-# Timer
 start_time = time.time()
-TIMER_LIMIT = 10  # seconds
 
-col1, col2 = st.columns(2)
+if st.session_state.round >= 5:
+    st.session_state.game_completed = True
 
-with col1:
-    st.subheader("🧑 Player 1")
-    choice1 = st.radio("Choose:", ["Snake", "Water", "Gun"], key="p1")
-
-with col2:
-    if mode == "Player vs Player":
-        st.subheader("🧑‍🤝‍🧑 Player 2")
-        choice2 = st.radio("Choose:", ["Snake", "Water", "Gun"], key="p2")
+if st.session_state.game_completed:
+    st.success("🎉 **GAME COMPLETED!** All 5 rounds finished!")
+    if st.session_state.score1 > st.session_state.score2:
+        st.balloons()
+        st.success(f"🏆 **{st.session_state.username1} WINS THE MATCH!**")
+    elif st.session_state.score2 > st.session_state.score1:
+        st.balloons()
+        winner_name = st.session_state.username2 if mode == "Player vs Player" else "Computer"
+        st.success(f"🏆 **{winner_name} WINS THE MATCH!**")
     else:
-        choice2 = random.choice(["Snake", "Water", "Gun"])
-        st.subheader("🤖 Computer will choose automatically.")
+        st.info("🤝 **IT'S A TIE!** Great match!")
 
-if st.button("🎯 Play Round"):
-    if time.time() - start_time > TIMER_LIMIT:
-        st.warning("⏱️ Time's up! You took too long.")
-        st.session_state.timer_expired = True
-        st.session_state.score2 += 1
-    else:
-        you = youDict[choice1]
-        opponent = youDict[choice2]
+    st.write(f"Final Score: {st.session_state.username1}: {st.session_state.score1} | {st.session_state.username2 if mode == 'Player vs Player' else 'Computer'}: {st.session_state.score2}")
 
-        st.write(f"🧑 Player 1 chose: **{choice1}**")
-        st.write(f"🧑‍🤝‍🧑 {'Player 2' if mode == 'Player vs Player' else 'Computer'} chose: **{choice2}**")
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("🔄 **REMATCH**", type="primary"):
+            st.session_state.score1 = 0
+            st.session_state.score2 = 0
+            st.session_state.history = []
+            st.session_state.round = 0
+            st.session_state.locked_choice1 = None
+            st.session_state.game_completed = False
+            st.success("New match started! Good luck!")
+            st.rerun()
+    st.divider()
 
-        if you == opponent:
-            st.info("It's a draw!")
-        elif (you == 1 and opponent == -1) or (you == -1 and opponent == 0) or (you == 0 and opponent == 1):
-            st.success("✅ Player 1 Wins This Round!")
-            st.session_state.score1 += 1
+if not st.session_state.game_completed:
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader(f"🧑 {st.session_state.username1} (Player 1)")
+        if st.session_state.locked_choice1 is None:
+            choice1 = st.radio("Choose:", ["Snake", "Water", "Gun"], key="p1")
+            if st.button("🔒 Lock Choice"):
+                st.session_state.locked_choice1 = choice1
         else:
-            st.success(f"✅ {'Player 2' if mode == 'Player vs Player' else 'Computer'} Wins This Round!")
-            st.session_state.score2 += 1
+            st.success(f"Choice locked: {st.session_state.locked_choice1}")
 
-        # Scores
-        st.divider()
-        st.subheader("🏆 Scoreboard")
-        st.write(f"👉 {player_name}: {st.session_state.score1}")
-        st.write(f"💻 {'Player 2' if mode == 'Player vs Player' else 'Computer'}: {st.session_state.score2}")
+    with col2:
+        if mode == "Player vs Player":
+            st.subheader(f"👳🏻‍♀ {st.session_state.username2} (Player 2)")
+            choice2 = st.radio("Choose:", ["Snake", "Water", "Gun"], key="p2")
+        else:
+            st.subheader("🤖 Computer will choose automatically")
+            if difficulty == "Easy":
+                choice2 = random.choice(["Snake", "Water", "Gun"])
+            else:
+                last_choice = st.session_state.locked_choice1
+                if last_choice == "Snake":
+                    choice2 = "Gun"
+                elif last_choice == "Water":
+                    choice2 = "Snake"
+                elif last_choice == "Gun":
+                    choice2 = "Water"
+                else:
+                    choice2 = random.choice(["Snake", "Water", "Gun"])
 
-        # Leaderboard
-        if mode == "Player vs Computer":
-            def update_leaderboard(name, score):
-                if not os.path.exists(LEADERBOARD_FILE):
-                    with open(LEADERBOARD_FILE, "w") as f:
-                        json.dump([], f)
+    if st.button("🎯 Play Round"):
+        if st.session_state.locked_choice1 is None:
+            st.warning("Player 1 must lock their choice first")
+        else:
+            if time.time() - start_time > TIMER_LIMIT:
+                st.warning("⏱️ Time's up! You took too long.")
+                st.session_state.score2 += 1
+            else:
+                you = YOU_DICT[st.session_state.locked_choice1]
+                opponent = YOU_DICT[choice2]
 
-                with open(LEADERBOARD_FILE, "r") as f:
-                    board = json.load(f)
+                st.write(f"🧑 {st.session_state.username1} chose: **{st.session_state.locked_choice1}**")
+                st.write(f"👳️ {st.session_state.username2 if mode == 'Player vs Player' else 'Computer'} chose: **{choice2}**")
 
-                board.append({"name": name, "score": score})
-                board = sorted(board, key=lambda x: x["score"], reverse=True)[:5]
+                if you == opponent:
+                    result = "Draw"
+                    st.info("It's a draw!")
+                elif (you == 1 and opponent == -1) or (you == -1 and opponent == 0) or (you == 0 and opponent == 1):
+                    result = st.session_state.username1
+                    st.success("✅ Player 1 Wins This Round!")
+                    st.session_state.score1 += 1
+                else:
+                    result = st.session_state.username2 if mode == "Player vs Player" else "Computer"
+                    st.success(f"✅ {result} Wins This Round!")
+                    st.session_state.score2 += 1
 
-                with open(LEADERBOARD_FILE, "w") as f:
-                    json.dump(board, f, indent=4)
+                st.session_state.round += 1
+                st.session_state.history.append({"Round": st.session_state.round, "P1": st.session_state.locked_choice1, "P2": choice2, "Winner": result})
 
-            update_leaderboard(player_name, st.session_state.score1)
+                st.balloons()
+                st.success(f"🎯 **ROUND {st.session_state.round} COMPLETED!**")
 
-# Reset
-if st.button("🔁 Reset Game"):
-    st.session_state.score1 = 0
-    st.session_state.score2 = 0
-    st.session_state.timer_expired = False
-    st.success("Game Reset!")
+                st.progress(st.session_state.round / 5)
+                st.write(f"Progress: {st.session_state.round}/5 rounds completed")
 
-# Leaderboard
-if st.button("📋 Show Leaderboard (Top 5)"):
-    if os.path.exists(LEADERBOARD_FILE):
-        with open(LEADERBOARD_FILE, "r") as f:
-            board = json.load(f)
-        st.subheader("🏅 Leaderboard")
-        for entry in board:
-            st.write(f"🥇 {entry['name']} : {entry['score']}")
-    else:
-        st.info("Leaderboard is empty. Play a few rounds first!")
+                st.session_state.locked_choice1 = None
 
-# Theme Tip
-with st.expander("🌗 Want Theme Support?"):
+st.divider()
+st.subheader("🏆 Scoreboard")
+st.write(f"👉 {st.session_state.username1}: {st.session_state.score1}")
+st.write(f"💻 {st.session_state.username2 if mode == 'Player vs Player' else 'Computer'}: {st.session_state.score2}")
+
+if st.session_state.history:
+    st.subheader("📜 Match History")
+    df = pd.DataFrame(st.session_state.history)
+    st.table(df)
+
+    st.subheader("📊 Win/Loss Trends")
+    chart_df = df.copy()
+    chart_df = chart_df[chart_df['Winner'] != 'Draw']
+    if not chart_df.empty:
+        fig = px.histogram(chart_df, x="Winner", color="Winner", title="Round-wise Win Distribution", nbins=5)
+        st.plotly_chart(fig, use_container_width=True)
+
+if not st.session_state.game_completed:
+    if st.button("🔁 Reset Game"):
+        st.session_state.score1 = 0
+        st.session_state.score2 = 0
+        st.session_state.history = []
+        st.session_state.round = 0
+        st.session_state.locked_choice1 = None
+        st.session_state.game_completed = False
+        st.success("Game reset successfully!")
+
+with st.expander("🍗 Want Theme Support?"):
     st.markdown(
         """
         Streamlit uses your system/browser theme.  
